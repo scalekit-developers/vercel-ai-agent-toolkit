@@ -1,50 +1,56 @@
-# Vercel AI SDK + Scalekit Agent Auth — Daily Summary Agent
+# Vercel AI SDK + Scalekit Agent Auth
 
-Fetches today's Google Calendar events and top unread Gmail messages using **Scalekit Agent Auth** for OAuth token management and **Vercel AI SDK / Anthropic SDK** for the LLM layer.
+A daily briefing agent that reads your Google Calendar and Gmail, built in both TypeScript and Python. Uses [Scalekit Agent Auth](https://docs.scalekit.com/agent-auth/quickstart/) to manage OAuth tokens so you never handle credentials manually.
 
-## How it works
+## What it does
 
-This demo shows **two ways** to call third-party APIs with Scalekit-managed credentials:
-
-| Tool | Approach | How |
-|------|----------|-----|
-| Google Calendar | **Direct API call** | Scalekit provides an OAuth token → agent calls Google Calendar REST API directly |
-| Gmail | **Scalekit built-in action** | Agent calls `execute_tool("gmail_fetch_mails")` → Scalekit handles the API call |
+Ask the agent for a summary of your day. It fetches today's calendar events and your top unread emails, then returns a concise briefing:
 
 ```
-User prompt
-  → LLM calls getCalendarEvents
-      → Scalekit returns OAuth token for user
-          → Agent calls Google Calendar API directly with token
-  → LLM calls getUnreadEmails
-      → Agent calls scalekit.execute_tool("gmail_fetch_mails")
-          → Scalekit calls Gmail API and returns results
-  → LLM summarizes both and responds
+Here's your day for Friday, March 27:
+
+📅 Calendar (3 events)
+- 9:00 AM  Team standup
+- 1:00 PM  Product review with design
+- 4:00 PM  1:1 with manager
+
+📧 Unread emails (5)
+- "Q1 roadmap feedback needed" — Sarah Chen (1h ago)
+- "Deploy failed: production" — GitHub Actions (2h ago)
+...
 ```
 
-Scalekit handles the full OAuth lifecycle (authorization, token storage, auto-refresh) for both connectors.
+## Why this repo
 
----
+Two ways to call third-party APIs with Scalekit-managed credentials are shown side by side:
+
+| Tool | Pattern | How |
+|------|---------|-----|
+| Google Calendar | **OAuth token** | Scalekit provides a token → agent calls Google Calendar REST API directly |
+| Gmail | **Built-in action** | Agent calls `execute_tool("gmail_fetch_mails")` → Scalekit makes the API call |
+
+Both patterns use the same Scalekit auth layer. Pick the one that fits your use case.
 
 ## Prerequisites
 
-- Node.js 18+ and pnpm (TypeScript version)
+- A [Scalekit account](https://app.scalekit.com) with `gmail` and `googlecalendar` connections configured
+- An Anthropic API key
+- Node.js 18+ and [pnpm](https://pnpm.io) (TypeScript version)
 - Python 3.11+ and [uv](https://docs.astral.sh/uv/) (Python version)
-- Anthropic API key with credits
-- Scalekit account with `gmail` and `googlecalendar` connected accounts for `user_123`
-
----
 
 ## Setup
 
-Copy the shared `.env` into each project folder:
+**1. Add credentials**
+
+Copy the example env file into whichever folder you're running:
 
 ```bash
 cp typescript/.env.example typescript/.env
+# or
 cp typescript/.env.example python/.env
 ```
 
-Fill in both `.env` files:
+Fill in your credentials:
 
 ```env
 SCALEKIT_ENV_URL=https://your-env.scalekit.dev
@@ -54,30 +60,18 @@ SCALEKIT_CLIENT_SECRET=...
 ANTHROPIC_API_KEY=sk-ant-...
 ```
 
-> Get Scalekit credentials: [app.scalekit.com](https://app.scalekit.com) → select your environment → Settings → API Credentials
+> Get your Scalekit credentials at [app.scalekit.com](https://app.scalekit.com) → select your environment → Settings → API Credentials
 
----
+**2. Run**
 
-## TypeScript
-
+TypeScript:
 ```bash
 cd typescript
 pnpm install
 pnpm start
 ```
 
-**How it works:**
-- Uses `@ai-sdk/anthropic` + `generateText` with two tools
-- **`getCalendarEvents`**: Scalekit SDK fetches an OAuth token → agent calls Google Calendar REST API directly with `fetch()`
-- **`getUnreadEmails`**: agent calls `scalekit.tools.executeTool("gmail_fetch_mails")` → Scalekit executes the Gmail API call
-
-**Key files:**
-- `src/index.ts` — main agent script
-
----
-
-## Python
-
+Python:
 ```bash
 cd python
 uv venv .venv
@@ -85,46 +79,52 @@ uv pip install -r requirements.txt
 .venv/bin/python index.py
 ```
 
-**How it works:**
-- Uses the `anthropic` SDK directly with a manual tool-calling loop
-- **`get_calendar_events`**: Scalekit SDK fetches an OAuth token → agent calls Google Calendar REST API directly with `requests`
-- **`get_unread_emails`**: agent calls `actions.execute_tool("gmail_fetch_mails")` → Scalekit executes the Gmail API call
+## Authorizing a user
 
-**Key files:**
-- `index.py` — main agent script
+The first time a user runs the agent, Scalekit checks if they've authorized Gmail and Google Calendar. If not, an authorization link is printed in the terminal:
 
----
+```
+[gmail] Authorization required.
+Open this link:
 
-## Authorizing a user (first time)
+  https://auth.scalekit.dev/connect/...
 
-Both agents automatically check if the user has authorized each connector. If not, they print an authorization link and wait for you to complete the OAuth flow.
+Press Enter once you have completed the OAuth flow...
+```
 
-To manually generate an authorization link:
+After the user clicks the link and completes OAuth, Scalekit stores the tokens. Subsequent runs skip the prompt entirely — tokens are refreshed automatically.
 
-**TypeScript**
+## How the two patterns work
+
+### OAuth token pattern (Calendar)
+
 ```typescript
-const { link } = await scalekit.connectedAccounts.getMagicLinkForConnectedAccount({
-  connector: 'googlecalendar',
-  identifier: 'user_123',
+// Scalekit returns a valid, auto-refreshed token
+const token = await getAccessToken('googlecalendar');
+
+// Your code calls the API directly
+const res = await fetch('https://www.googleapis.com/calendar/v3/...', {
+  headers: { Authorization: `Bearer ${token}` },
 });
-console.log('Authorize here:', link);
 ```
 
-**Python**
-```python
-link_response = actions.get_authorization_link(
-    connection_name="googlecalendar",
-    identifier="user_123",
-)
-print("Authorize here:", link_response.link)
+Use this when you need full control over the API call — custom parameters, pagination, error handling.
+
+### Built-in action pattern (Gmail)
+
+```typescript
+// Scalekit executes the API call for you
+const result = await scalekit.tools.executeTool({
+  toolName: 'gmail_fetch_mails',
+  connectedAccountId: account.id,
+  params: { query: 'is:unread', max_results: 5 },
+});
 ```
 
-Visit the link, complete Google OAuth, then re-run the agent.
-
----
+Use this for speed — no API docs to read, no request building. Scalekit handles the call and returns structured data.
 
 ## Learn more
 
-- [Agent Auth quickstart](https://docs.scalekit.com/agent-auth/quickstart/) — get started with Scalekit Agent Auth
-- [Calling tools via Scalekit SDK](https://docs.scalekit.com/agent-auth/tools/agent-tools-quickstart/) — direct tool execution, modifiers, and agentic calling
-- [All supported agent connectors](https://docs.scalekit.com/guides/integrations/agent-connectors/) — Gmail, Google Calendar, Slack, Notion, and more
+- [Agent Auth quickstart](https://docs.scalekit.com/agent-auth/quickstart/) — connect your first user in minutes
+- [Calling tools via Scalekit SDK](https://docs.scalekit.com/agent-auth/tools/agent-tools-quickstart/) — direct execution, modifiers, and agentic tool calling
+- [All supported connectors](https://docs.scalekit.com/guides/integrations/agent-connectors/) — Gmail, Google Calendar, Slack, Notion, and more
