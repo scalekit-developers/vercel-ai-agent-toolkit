@@ -1,0 +1,4 @@
+scalekit-sdk-python
+anthropic
+requests
+python-dotenv
