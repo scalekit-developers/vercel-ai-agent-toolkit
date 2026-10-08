@@ -2,6 +2,8 @@
 
 A daily briefing agent that reads your Google Calendar and Gmail, built in both TypeScript and Python. Uses [Scalekit Agent Auth](https://docs.scalekit.com/agent-auth/quickstart/) to manage OAuth tokens so you never handle credentials manually.
 
+Scalekit provides auth and actions on behalf of users, with 500+ connectors and 20,000+ tools.
+
 ## What it does
 
 Ask the agent for a summary of your day. It fetches today's calendar events and your top unread emails, then returns a concise briefing:
